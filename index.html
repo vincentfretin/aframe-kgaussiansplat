@@ -1,0 +1,114 @@
+<html>
+  <head>
+     <script type="importmap">
+      {
+        "imports": {
+          "@mkkellogg/gaussian-splats-3d": "https://cdn.jsdelivr.net/npm/@mkkellogg/gaussian-splats-3d@0.4.7/build/gaussian-splats-3d.module.js",
+          "aframe": "https://cdn.jsdelivr.net/gh/aframevr/aframe@cd543c6cbf52c81f14ac0d3a41cb9a883047c7ac/dist/aframe-master.module.min.js",
+          "three": "https://cdn.jsdelivr.net/npm/super-three@0.173.5/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/super-three@0.173.5/examples/jsm/"
+        }
+      }
+    </script>
+    <script type="module">
+/**
+ * @license MIT
+ */
+import AFRAME from "aframe";
+import * as GaussianSplats3D from "@mkkellogg/gaussian-splats-3d";
+AFRAME.registerComponent("kgaussiansplat", {
+  schema: {
+    src: { type: "string", default: "" },
+    up: { type: "vec3", default: { x: 0, y: -1, z: 0 } },
+    sphericalHarmonicsDegree: { type: "int", oneOf: [0, 1, 2], default: 0 },
+    splatAlphaRemovalThreshold: { type: "int", min: 0, max: 255, default: 1 },
+    sceneRevealMode: { type: "string", oneOf: ["Default", "Gradual", "Instant"], default: "Default" },
+  },
+  init() {
+    this.defaultUp = new THREE.Vector3(0, 1, 0);
+      this.viewer = new GaussianSplats3D.DropInViewer({
+      sharedMemoryForWorkers: false, // better keep that to true and define the headers 'Cross-Origin-Embedder-Policy': 'require-corp', 'Cross-Origin-Opener-Policy': 'same-origin'
+      dynamicScene: true, // if it is set to false, I don't see anything
+      halfPrecisionCovariancesOnGPU: true,
+      inMemoryCompressionLevel: 2, // for non ksplat files
+      sceneRevealMode: GaussianSplats3D.SceneRevealMode[this.data.sceneRevealMode],
+      sphericalHarmonicsDegree: this.data.sphericalHarmonicsDegree,
+    });
+    const showLoadingUI = false;
+    this.viewer
+      .addSplatScenes(
+        [
+          {
+            path: this.data.src,
+            splatAlphaRemovalThreshold: this.data.splatAlphaRemovalThreshold,
+          },
+        ],
+        showLoadingUI
+      )
+      .then(() => {
+        this.el.setObject3D("mesh", this.viewer);
+      });
+  },
+
+  update(oldData) {
+    if (
+      (oldData.src !== undefined && oldData.src !== this.data.src) ||
+      (oldData.splatAlphaRemovalThreshold !== undefined &&
+        oldData.splatAlphaRemovalThreshold !== this.data.splatAlphaRemovalThreshold)
+    ) {
+      this.remove();
+      this.init();
+      return;
+    }
+    if (
+      oldData.sphericalHarmonicsDegree !== undefined &&
+      oldData.sphericalHarmonicsDegree !== this.data.sphericalHarmonicsDegree
+    ) {
+      this.viewer.setActiveSphericalHarmonicsDegrees(this.data.sphericalHarmonicsDegree);
+    }
+
+    // Calculate rotation from default up vector (0,1,0) to desired up vector
+    if (!this.defaultUp.equals(this.data.up)) {
+      if (this.data.up.x === 0 && this.data.up.y === -1 && this.data.up.z === 0) {
+        this.el.object3D.rotation.set(0, Math.PI, Math.PI);
+      } else {
+        const targetUp = new THREE.Vector3().copy(this.data.up).normalize();
+        const quaternion = new THREE.Quaternion();
+        quaternion.setFromUnitVectors(targetUp, this.defaultUp);
+        this.el.object3D.quaternion.copy(quaternion);
+      }
+    }
+  },
+
+  remove() {
+    const mesh = this.el.getObject3D("mesh");
+    if (mesh) {
+      this.el.removeObject3D("mesh");
+      mesh.dispose();
+      // https://github.com/mkkellogg/GaussianSplats3D/blob/2dfc83e497bd76e558fe970c54464b17b5f5c689/src/DropInViewer.js#L118-L120
+      // in v0.4.7 DropInViewer.dispose doesn't dispose those:
+      mesh.callbackMesh.material.dispose();
+      mesh.callbackMesh.geometry.dispose();
+    }
+    this.viewer = null;
+  },
+});
+    </script>
+    <script src="./info-message.js" type="module"></script>
+  </head>
+  <body>
+    <a-scene
+      background="color: #ffffff"
+      renderer="antialias: false"
+      info-message="htmlSrc: #messageText"
+      inspector="url: https://cdn.jsdelivr.net/gh/c-frame/aframe-editor@1.7.x/dist/aframe-editor.min.js">
+      <a-assets>
+        <a-asset-item id="messageText" src="message.html"></a-asset-item>
+      </a-assets>
+      <a-entity kgaussiansplat="src: ./jade_drums.spz; up: 0 -1 0; sphericalHarmonicsDegree: 0; splatAlphaRemovalThreshold: 20"></a-entity>
+      <a-entity id="rig" position="0 0 2">
+        <a-entity id="camera" position="0 1.6 0" camera look-controls wasd-controls></a-entity>
+      </a-entity>
+    </a-scene>
+  </body>
+</html>
